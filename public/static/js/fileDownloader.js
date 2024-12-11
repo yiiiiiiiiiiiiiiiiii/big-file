@@ -2,10 +2,10 @@ class FileDownloader {
   constructor({
     url,
     fileName,
-    chunkSize = 2 * 1024 * 1024,
+    chunkSize = 1 * 1024 * 1024,
     success,
     progress,
-    reset,
+    begin,
   }) {
     this.url = url;
     this.fileName = fileName;
@@ -16,11 +16,12 @@ class FileDownloader {
     this.downloadedSize = 0;
     this.chunks = [];
     this.abortController = new AbortController();
+    this.taskQueue = new TaskQueue(3);
     this.paused = false;
     this.cb = {
+      begin: begin,
       success: success,
       progress: progress,
-      reset: reset,
     };
   }
 
@@ -62,10 +63,7 @@ class FileDownloader {
           total: this.fileSize,
         });
 
-      if (!this.paused && this.currentChunk < this.totalChunks - 1) {
-        this.currentChunk++;
-        this.downloadChunk(this.currentChunk);
-      } else if (this.currentChunk === this.totalChunks - 1) {
+      if (this.downloadedSize === this.fileSize) {
         this.mergeChunks();
       }
     } catch (err) {
@@ -77,16 +75,12 @@ class FileDownloader {
     if (this.chunks.length === 0) {
       await this.getFileSize();
     }
-    this.downloadChunk(this.currentChunk);
-  }
 
-  pauseDownload() {
-    this.paused = true;
-  }
+    for (let index = 0; index < this.totalChunks; index++) {
+      this.taskQueue.add(() => this.downloadChunk(index));
+    }
 
-  resumeDownload() {
-    this.paused = false;
-    this.downloadChunk(this.currentChunk);
+    this.cb.begin && this.cb.begin();
   }
 
   cancelDownload() {
@@ -120,6 +114,5 @@ class FileDownloader {
     this.totalChunks = 0;
     this.currentChunk = 0;
     this.downloadedSize = 0;
-    this.cb.reset && this.cb.reset();
   }
 }
